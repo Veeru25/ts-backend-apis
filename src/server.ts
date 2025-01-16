@@ -46,13 +46,17 @@ import express from 'express';
 import authRoutes from './routes/authRoutes'; 
 import userDetailsRoutes from './routes/userDetailsRoutes'
 import connectDb from './config/db.Config';
+import setupSwagger from '../swagger';
 
 const app = express();
 
 app.use(express.json());
 connectDb()
 
+setupSwagger(app);
+
 app.use('/auth', authRoutes);
+
 app.use('/api',userDetailsRoutes)
 
 app.listen(4000, () => {

@@ -141,51 +141,61 @@ export const signup = async (req: Request<{}, {}, SignupRequestBody>, res: Respo
   }
 };
 
+
+
 export const login = async (req: Request<{}, {}, LoginRequestBody>, res: Response): Promise<void> => {
-  const { email, password } = req.body;
-
-  const emailLowerCase = email.toLowerCase();
-
-  try {
-    const user = await User.findOne({ email: emailLowerCase });
-    if (!user) {
-      return<any> res.status(404).json({ message: 'User not found' });
+    const { email, password } = req.body;
+  
+    if (!email || !password) {
+      return<any> res.status(400).json({ message: 'Email and password are required' });
     }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return<any> res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const token = jwt.sign(
-      { id: user._id, usertype: user.usertype, email: user.email.toLowerCase(), username: user.username },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    const existingDetails = await UserDetails.findOne({ userId: user._id });
-    if (!existingDetails) {
-      const newDetails = new UserDetails({
-        userId: user._id,
-        email: user.email.toLowerCase(),
+  
+    try {
+      const emailLowerCase = email.toLowerCase();
+      const user = await User.findOne({ email: emailLowerCase });
+  
+      if (!user) {
+        return<any> res.status(404).json({ message: 'User not found' });
+      }
+  
+    //   console.log('Provided Password:', password);
+    //   console.log('Stored Hashed Password:', user.password);
+  
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+  
+      if (!isPasswordValid) {
+        return<any> res.status(401).json({ message: 'Invalid credentials' });
+      }
+  
+      const token = jwt.sign(
+        { id: user._id, usertype: user.usertype, email: user.email, username: user.username },
+        JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+  
+      const existingDetails = await UserDetails.findOne({ userId: user._id });
+      if (!existingDetails) {
+        const newDetails = new UserDetails({
+          userId: user._id,
+          email: user.email,
+        });
+        await newDetails.save();
+      }
+  
+      res.status(200).json({
+        message: 'Login successful',
+        token,
+        user: {
+          username: user.username,
+          email: user.email,
+        },
       });
-      await newDetails.save();
+    } catch (error) {
+      console.error('Error in login:', error);
+      res.status(500).json({ message: 'Server error' });
     }
-
-    res.status(200).json({
-      message: 'Login successful',
-      token,
-      user: {
-        username: user.username,
-        email: user.email,
-      },
-    });
-  } catch (error) {
-    console.error('Error in login:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
+  };
+  
 export const forgotpassword = async (req: Request<{}, {}, ForgotPasswordRequestBody>, res: Response): Promise<void> => {
   const { email } = req.body;
 

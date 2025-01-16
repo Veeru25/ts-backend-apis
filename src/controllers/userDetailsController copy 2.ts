@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import UserDetails from '../models/UserDetails';
 import dotenv from 'dotenv';
-import { helperFunction } from '../helpers/mongooseHelper';
 
 dotenv.config();
 
@@ -58,63 +57,6 @@ export const updateUser = (req: Request, res: Response, next: NextFunction): voi
   }
 };
 
-
-export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { page = 1, limit = 3, email, mobile } = req.query;
-
-    // Search filter
-    const searchFilter: any = {};
-    if (email) searchFilter.email = { $regex: email, $options: 'i' };
-    if (mobile) searchFilter['userDetails.mobile'] = { $regex: mobile, $options: 'i' };
-
-    // Aggregate users
-    const pipeline = [
-      {
-        $lookup: {
-          from: 'userdetails',
-          localField: '_id',
-          foreignField: 'userId',
-          as: 'userDetails',
-        },
-      },
-      { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } },
-      { $match: searchFilter },
-      { $project: { _id: 0, email: 1, 'userDetails.mobile': 1, 'userDetails.pincode': 1, 'userDetails.address': 1 } },
-      { $skip: (Number(page) - 1) * Number(limit) },
-      { $limit: Number(limit) },
-    ];
-
-    const allUsers = await helperFunction(User, 'aggregate', { pipeline });
-    const totalUsersCount = await helperFunction(User, 'aggregate', {
-      pipeline: [
-        {
-          $lookup: {
-            from: 'userdetails',
-            localField: '_id',
-            foreignField: 'userId',
-            as: 'userDetails',
-          },
-        },
-        { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } },
-        { $match: searchFilter },
-        { $count: 'total' },
-      ],
-    });
-
-    res.status(200).json({
-      message: 'All users retrieved successfully',
-      totalUsers: totalUsersCount.length ? totalUsersCount[0].total : 0,
-      currentPage: Number(page),
-      totalPages: Math.ceil((totalUsersCount.length ? totalUsersCount[0].total : 0) / Number(limit)),
-      users: allUsers,
-    });
-  } catch (error) {
-    console.error('Error in getAllUsers:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
 export const getUserDetails = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
@@ -123,7 +65,22 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const userDetails = await helperFunction(UserDetails, 'find', { userId });
+    const userDetailsId = await UserDetails.findOne({ userId }).exec();
+    if (!userDetailsId?.userId) {
+      res.status(400).json({ message: 'Invalid user ID' });
+      return;
+    }
+
+    const userDetails = await UserDetails.aggregate([
+      { $match: { userId: userDetailsId.userId } },
+      {
+        $project: {
+          _id: 0,
+          userId: 0,
+          __v: 0,
+        },
+      },
+    ]);
 
     if (!userDetails || userDetails.length === 0) {
       res.status(404).json({ message: 'User details not found' });
@@ -140,6 +97,92 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
   }
 };
 
+
+export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { page = 1, limit = 3, email, mobile } = req.query;
+
+    const searchFilter: any = {};
+    if (email) searchFilter.email = { $regex: email, $options: 'i' };
+    if (mobile) searchFilter['userDetails.mobile'] = { $regex: mobile, $options: 'i' }; 
+
+    const allUsers = await User.aggregate([
+      {
+        $lookup: {
+          from: 'userdetails',
+          localField: '_id',
+          foreignField: 'userId',
+          as: 'userDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $match: searchFilter,
+      },
+      {
+        $project: {
+          _id: 0,
+          email: 1,
+          'userDetails.mobile': 1,
+          'userDetails.pincode': 1,
+          'userDetails.address': 1,
+        },
+      },
+      {
+        $skip: (Number(page) - 1) * Number(limit),
+      },
+      {
+        $limit: Number(limit),
+      },
+    ]);
+
+    if (!allUsers || allUsers.length === 0) {
+      res.status(404).json({ message: 'No users found' });
+      return;
+    }
+
+    const totalUsers = await User.aggregate([
+      {
+        $lookup: {
+          from: 'userdetails',
+          localField: '_id',
+          foreignField: 'userId',
+          as: 'userDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $match: searchFilter,
+      },
+      {
+        $count: 'total',
+      },
+    ]);
+
+    res.status(200).json({
+      message: 'All users retrieved successfully',
+      totalUsers: totalUsers.length > 0 ? totalUsers[0].total : 0,
+      currentPage: Number(page),
+      totalPages: Math.ceil((totalUsers.length > 0 ? totalUsers[0].total : 0) / Number(limit)),
+      users: allUsers,
+    });
+  } catch (error) {
+    console.error('Error in getAllUsers:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
 export const updateUserDetails = async (req: Request, res: Response): Promise<void> => {
   const { mobile, pincode, address } = req.body;
   const userId = req.params.userId;
@@ -150,23 +193,28 @@ export const updateUserDetails = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const updateResult = await helperFunction(UserDetails, 'updateOne', {
-      filter: { userId },
-      update: { $set: { mobile, pincode, address } },
-    });
+    let userDetails = await UserDetails.findOne({ userId }).exec();
 
-    if (updateResult.matchedCount === 0) {
+    if (!userDetails) {
       res.status(404).json({ message: 'User details not found' });
       return;
     }
 
-    res.status(200).json({ message: 'User details updated successfully' });
+    if (mobile) userDetails.mobile = mobile;
+    if (pincode) userDetails.pincode = pincode;
+    if (address) userDetails.address = address;
+
+    await userDetails.save();
+
+    res.status(200).json({
+      message: 'User details updated successfully',
+      userDetails,
+    });
   } catch (error) {
     console.error('Error in updateUserDetails:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
-
 
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -177,14 +225,14 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const user = await helperFunction(User, 'findById', { _id: userId });
+    const user = await User.findById(userId).exec();
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
     }
 
-    await helperFunction(UserDetails, 'deleteOne', { userId });
-    await helperFunction(User, 'deleteOne', { _id: userId });
+    await UserDetails.findOneAndDelete({ userId }).exec();
+    await User.findByIdAndDelete(userId).exec();
 
     res.status(200).json({ message: 'User account and details deleted successfully' });
   } catch (error) {
@@ -192,4 +240,3 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({ message: 'Server error' });
   }
 };
-

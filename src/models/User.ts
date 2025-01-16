@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 interface IUser extends Document {
   username: string;
-  usertype: 'admin'; 
+  usertype: 'user' | 'admin' | 'customer'; 
   email: string;
   password: string;
   userotp?: string;
@@ -15,7 +15,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
   },
   usertype: {
     type: String,
-    enum: ['admin'],
+    enum: ['user', 'admin', 'customer'],
     required: true,
   },
   email: {
