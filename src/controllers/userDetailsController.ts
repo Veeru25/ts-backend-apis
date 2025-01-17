@@ -58,17 +58,20 @@ export const updateUser = (req: Request, res: Response, next: NextFunction): voi
   }
 };
 
-
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = 1, limit = 3, email, mobile } = req.query;
+    const { page = 1, limit = 3, search } = req.query;
 
-    // Search filter
-    const searchFilter: any = {};
-    if (email) searchFilter.email = { $regex: email, $options: 'i' };
-    if (mobile) searchFilter['userDetails.mobile'] = { $regex: mobile, $options: 'i' };
+    const searchFilter: any = [];
+    if (search) {
+      searchFilter.push(
+        { email: { $regex: search, $options: 'i' } },
+        { 'userDetails.mobile': { $regex: search, $options: 'i' } },
+        { 'userDetails.pincode': { $regex: search, $options: 'i' } },
+        { 'userDetails.address': { $regex: search, $options: 'i' } }
+      );
+    }
 
-    // Aggregate users
     const pipeline = [
       {
         $lookup: {
@@ -79,13 +82,22 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
         },
       },
       { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } },
-      { $match: searchFilter },
-      { $project: { _id: 0, email: 1, 'userDetails.mobile': 1, 'userDetails.pincode': 1, 'userDetails.address': 1 } },
+      ...(searchFilter.length > 0 ? [{ $match: { $or: searchFilter } }] : []), // Apply search filter if exists
+      {
+        $project: {
+          _id: 0,
+          email: 1,
+          'userDetails.mobile': 1,
+          'userDetails.pincode': 1,
+          'userDetails.address': 1,
+        },
+      },
       { $skip: (Number(page) - 1) * Number(limit) },
       { $limit: Number(limit) },
     ];
 
     const allUsers = await helperFunction(User, 'aggregate', { pipeline });
+
     const totalUsersCount = await helperFunction(User, 'aggregate', {
       pipeline: [
         {
@@ -97,7 +109,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
           },
         },
         { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } },
-        { $match: searchFilter },
+        ...(searchFilter.length > 0 ? [{ $match: { $or: searchFilter } }] : []),
         { $count: 'total' },
       ],
     });
@@ -114,6 +126,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 export const getUserDetails = async (req: Request, res: Response): Promise<void> => {
   try {
