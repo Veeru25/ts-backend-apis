@@ -51,15 +51,10 @@
  *           type: integer
  *         description: Number of results per page
  *       - in: query
- *         name: email
+ *         name: search
  *         schema:
  *           type: string
- *         description: Filter by email
- *       - in: query
- *         name: mobile
- *         schema:
- *           type: string
- *         description: Filter by mobile number
+ *         description: Search by email, mobile, pincode, or address (case-insensitive, partial match)
  *     responses:
  *       200:
  *         description: Successfully retrieved all users
@@ -70,19 +65,40 @@
  *               properties:
  *                 message:
  *                   type: string
+ *                   description: Success message
  *                 totalUsers:
  *                   type: integer
+ *                   description: Total number of users matching the search
  *                 currentPage:
  *                   type: integer
+ *                   description: Current page of the results
  *                 totalPages:
  *                   type: integer
+ *                   description: Total number of pages
  *                 users:
  *                   type: array
  *                   items:
  *                     type: object
+ *                     properties:
+ *                       email:
+ *                         type: string
+ *                         description: User's email address
+ *                       userDetails:
+ *                         type: object
+ *                         properties:
+ *                           mobile:
+ *                             type: string
+ *                             description: User's mobile number
+ *                           pincode:
+ *                             type: string
+ *                             description: User's pincode
+ *                           address:
+ *                             type: string
+ *                             description: User's address
  *       403:
  *         description: Forbidden access
  */
+
 
 /**
  * @swagger
